@@ -1,13 +1,76 @@
-# Serde JSON &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![Rustc Version 1.36+]][rustc]
+# Serde JSON Untagged &emsp; [![Latest Version]][crates.io] [![Rustc Version 1.36+]][rustc]
 
-[Build Status]: https://img.shields.io/github/actions/workflow/status/serde-rs/json/ci.yml?branch=master
-[actions]: https://github.com/serde-rs/json/actions?query=branch%3Amaster
 [Latest Version]: https://img.shields.io/crates/v/serde_json_untagged.svg
-[crates.io]: https://crates.io/crates/serde\_json
+[crates.io]: https://crates.io/crates/serde_json_untagged
 [Rustc Version 1.36+]: https://img.shields.io/badge/rustc-1.36+-lightgray.svg
 [rustc]: https://blog.rust-lang.org/2019/07/04/Rust-1.36.0.html
 
+> **This is a fork of [serde-json](https://github.com/serde-rs/json)** that adds support for serializing and deserializing enum variants without their tag wrapper.
+
 **Serde is a framework for *ser*ializing and *de*serializing Rust data structures efficiently and generically.**
+
+---
+
+## What's Different from serde-json?
+
+This fork adds methods for working with **untagged enum variants**:
+
+### Serialization without tags
+Serialize enum variants without the wrapping tag structure:
+
+```rust
+use serde::Serialize;
+use serde_json_untagged;
+
+#[derive(Serialize)]
+enum Event {
+    Created { id: u64, name: String },
+    Updated { id: u64, name: String },
+}
+
+let event = Event::Created { id: 42, name: "example".to_string() };
+
+// Regular serde_json would produce: {"Created":{"id":42,"name":"example"}}
+// This fork can produce: {"id":42,"name":"example"}
+let json = serde_json_untagged::to_string_untagged(&event).unwrap();
+```
+
+**New serialization methods:**
+- `to_writer_untagged` / `to_writer_pretty_untagged`
+- `to_vec_untagged` / `to_vec_pretty_untagged`
+- `to_string_untagged` / `to_string_pretty_untagged`
+
+### Deserialization with explicit tags
+Deserialize JSON into enum variants by specifying the tag explicitly:
+
+```rust
+use serde::Deserialize;
+use serde_json_untagged;
+
+#[derive(Deserialize)]
+enum Event {
+    Created { id: u64, name: String },
+    Updated { id: u64, name: String },
+}
+
+// JSON without the tag wrapper
+let json = r#"{"id":42,"name":"example"}"#;
+
+// Specify which variant to deserialize into
+let event: Event = serde_json_untagged::from_str_tagged(json, "Created".to_string()).unwrap();
+```
+
+**New deserialization methods:**
+- `from_reader_tagged`
+- `from_slice_tagged`
+- `from_str_tagged`
+
+### Why use this fork?
+
+Use this fork when you need to:
+- Serialize enum variants to match an external API that doesn't use tag wrappers
+- Deserialize JSON into enum variants when the variant type is known from context (e.g., from a separate field or endpoint path)
+- Create flatter JSON structures without nested tag objects
 
 ---
 
