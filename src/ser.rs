@@ -17,6 +17,7 @@ use serde::ser::{self, Impossible, Serialize};
 pub struct Serializer<W, F = CompactFormatter> {
     writer: W,
     formatter: F,
+    skip_tag: bool,
 }
 
 impl<W> Serializer<W>
@@ -46,11 +47,21 @@ where
     W: io::Write,
     F: Formatter,
 {
+    /// Skips the enum tag.
+    #[inline]
+    pub fn skip_tag(&mut self) {
+        self.skip_tag = true;
+    }
+
     /// Creates a new JSON visitor whose output will be written to the writer
     /// specified.
     #[inline]
     pub fn with_formatter(writer: W, formatter: F) -> Self {
-        Serializer { writer, formatter }
+        Serializer {
+            writer,
+            formatter,
+            skip_tag: false,
+        }
     }
 
     /// Unwrap the `Writer` from the `Serializer`.
@@ -294,11 +305,13 @@ where
             Ok(Compound::Map {
                 ser: self,
                 state: State::Empty,
+                tag: false,
             })
         } else {
             Ok(Compound::Map {
                 ser: self,
                 state: State::First,
+                tag: false,
             })
         }
     }
@@ -356,14 +369,20 @@ where
                 .formatter
                 .end_object(&mut self.writer)
                 .map_err(Error::io));
+            let tag = self.skip_tag;
+            self.skip_tag = false;
             Ok(Compound::Map {
                 ser: self,
                 state: State::Empty,
+                tag,
             })
         } else {
+            let tag = self.skip_tag;
+            self.skip_tag = false;
             Ok(Compound::Map {
                 ser: self,
                 state: State::First,
+                tag,
             })
         }
     }
@@ -387,23 +406,25 @@ where
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        tri!(self
-            .formatter
-            .begin_object(&mut self.writer)
-            .map_err(Error::io));
-        tri!(self
-            .formatter
-            .begin_object_key(&mut self.writer, true)
-            .map_err(Error::io));
-        tri!(self.serialize_str(variant));
-        tri!(self
-            .formatter
-            .end_object_key(&mut self.writer)
-            .map_err(Error::io));
-        tri!(self
-            .formatter
-            .begin_object_value(&mut self.writer)
-            .map_err(Error::io));
+        if !self.skip_tag {
+            tri!(self
+                .formatter
+                .begin_object(&mut self.writer)
+                .map_err(Error::io));
+            tri!(self
+                .formatter
+                .begin_object_key(&mut self.writer, true)
+                .map_err(Error::io));
+            tri!(self.serialize_str(variant));
+            tri!(self
+                .formatter
+                .end_object_key(&mut self.writer)
+                .map_err(Error::io));
+            tri!(self
+                .formatter
+                .begin_object_value(&mut self.writer)
+                .map_err(Error::io));
+        }
         self.serialize_map(Some(len))
     }
 
@@ -472,6 +493,7 @@ pub enum Compound<'a, W: 'a, F: 'a> {
     Map {
         ser: &'a mut Serializer<W, F>,
         state: State,
+        tag: bool,
     },
     #[cfg(feature = "arbitrary_precision")]
     Number { ser: &'a mut Serializer<W, F> },
@@ -493,7 +515,7 @@ where
         T: ?Sized + Serialize,
     {
         match self {
-            Compound::Map { ser, state } => {
+            Compound::Map { ser, state, tag: _ } => {
                 tri!(ser
                     .formatter
                     .begin_array_value(&mut ser.writer, *state == State::First)
@@ -514,7 +536,7 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => match state {
+            Compound::Map { ser, state, tag: _ } => match state {
                 State::Empty => Ok(()),
                 _ => ser.formatter.end_array(&mut ser.writer).map_err(Error::io),
             },
@@ -589,7 +611,7 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => {
+            Compound::Map { ser, state, tag: _ } => {
                 match state {
                     State::Empty => {}
                     _ => tri!(ser.formatter.end_array(&mut ser.writer).map_err(Error::io)),
@@ -622,7 +644,7 @@ where
         T: ?Sized + Serialize,
     {
         match self {
-            Compound::Map { ser, state } => {
+            Compound::Map { ser, state, tag: _ } => {
                 tri!(ser
                     .formatter
                     .begin_object_key(&mut ser.writer, *state == State::First)
@@ -668,7 +690,7 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => match state {
+            Compound::Map { ser, state, tag: _ } => match state {
                 State::Empty => Ok(()),
                 _ => ser.formatter.end_object(&mut ser.writer).map_err(Error::io),
             },
@@ -751,16 +773,23 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => {
+            Compound::Map { ser, state, tag } => {
                 match state {
                     State::Empty => {}
-                    _ => tri!(ser.formatter.end_object(&mut ser.writer).map_err(Error::io)),
+                    _ => {
+                        tri!(ser.formatter.end_object(&mut ser.writer).map_err(Error::io))
+                    }
                 }
                 tri!(ser
                     .formatter
                     .end_object_value(&mut ser.writer)
                     .map_err(Error::io));
-                ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
+
+                if tag {
+                    Ok(())
+                } else {
+                    ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
+                }
             }
             #[cfg(feature = "arbitrary_precision")]
             Compound::Number { .. } => unreachable!(),
@@ -2203,6 +2232,110 @@ where
     value.serialize(&mut ser)
 }
 
+/// Serialize the given data structure as JSON into the I/O stream without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// Serialization guarantees it only feeds valid UTF-8 sequences to the writer.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let event = Event::Created { id: 42, name: "example".to_string() };
+///
+///     let mut buf = Vec::new();
+///     serde_json::to_writer_untagged(&mut buf, &event)?;
+///
+///     // Output: {"id":42,"name":"example"}
+///     // Instead of: {"Created":{"id":42,"name":"example"}}
+///     assert_eq!(buf, br#"{"id":42,"name":"example"}"#);
+///     Ok(())
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub fn to_writer_untagged<W, T>(writer: W, value: &T) -> Result<()>
+where
+    W: io::Write,
+    T: ?Sized + Serialize,
+{
+    let mut ser = Serializer::new(writer);
+    ser.skip_tag();
+    value.serialize(&mut ser)
+}
+
+/// Serialize the given data structure as pretty-printed JSON into the I/O
+/// stream without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// Serialization guarantees it only feeds valid UTF-8 sequences to the writer.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let event = Event::Updated { id: 42, name: "example".to_string() };
+///
+///     let mut buf = Vec::new();
+///     serde_json::to_writer_pretty_untagged(&mut buf, &event)?;
+///
+///     // Output (pretty-printed):
+///     // {
+///     //   "id": 42,
+///     //   "name": "example"
+///     // }
+///     // Instead of:
+///     // {
+///     //   "Updated": {
+///     //     "id": 42,
+///     //     "name": "example"
+///     //   }
+///     // }
+///     Ok(())
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub fn to_writer_pretty_untagged<W, T>(writer: W, value: &T) -> Result<()>
+where
+    W: io::Write,
+    T: ?Sized + Serialize,
+{
+    let mut ser = Serializer::pretty(writer);
+    ser.skip_tag();
+    value.serialize(&mut ser)
+}
+
 /// Serialize the given data structure as a JSON byte vector.
 ///
 /// # Errors
@@ -2232,6 +2365,99 @@ where
 {
     let mut writer = Vec::with_capacity(128);
     tri!(to_writer_pretty(&mut writer, value));
+    Ok(writer)
+}
+
+/// Serialize the given data structure as a JSON byte vector without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     let event = Event::Created { id: 42, name: "example".to_string() };
+///
+///     let json = serde_json::to_vec_untagged(&event).unwrap();
+///
+///     // Output: {"id":42,"name":"example"}
+///     // Instead of: {"Created":{"id":42,"name":"example"}}
+///     assert_eq!(json, br#"{"id":42,"name":"example"}"#);
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+pub fn to_vec_untagged<T>(value: &T) -> Result<Vec<u8>>
+where
+    T: ?Sized + Serialize,
+{
+    let mut writer = Vec::with_capacity(128);
+    tri!(to_writer_untagged(&mut writer, value));
+    Ok(writer)
+}
+
+/// Serialize the given data structure as a pretty-printed JSON byte vector without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     let event = Event::Updated { id: 42, name: "example".to_string() };
+///
+///     let json = serde_json::to_vec_pretty_untagged(&event).unwrap();
+///
+///     // Output (pretty-printed):
+///     // {
+///     //   "id": 42,
+///     //   "name": "example"
+///     // }
+///     // Instead of:
+///     // {
+///     //   "Updated": {
+///     //     "id": 42,
+///     //     "name": "example"
+///     //   }
+///     // }
+///     let expected = b"{\n  \"id\": 42,\n  \"name\": \"example\"\n}";
+///     assert_eq!(json, expected);
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+pub fn to_vec_pretty_untagged<T>(value: &T) -> Result<Vec<u8>>
+where
+    T: ?Sized + Serialize,
+{
+    let mut writer = Vec::with_capacity(128);
+    tri!(to_writer_pretty_untagged(&mut writer, value));
     Ok(writer)
 }
 
@@ -2266,6 +2492,105 @@ where
     T: ?Sized + Serialize,
 {
     let vec = tri!(to_vec_pretty(value));
+    let string = unsafe {
+        // We do not emit invalid UTF-8.
+        String::from_utf8_unchecked(vec)
+    };
+    Ok(string)
+}
+
+/// Serialize the given data structure as a String of JSON without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     let event = Event::Created { id: 42, name: "example".to_string() };
+///
+///     let json = serde_json::to_string_untagged(&event).unwrap();
+///
+///     // Output: {"id":42,"name":"example"}
+///     // Instead of: {"Created":{"id":42,"name":"example"}}
+///     assert_eq!(json, r#"{"id":42,"name":"example"}"#);
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+pub fn to_string_untagged<T>(value: &T) -> Result<String>
+where
+    T: ?Sized + Serialize,
+{
+    let vec = tri!(to_vec_untagged(value));
+    let string = unsafe {
+        // We do not emit invalid UTF-8.
+        String::from_utf8_unchecked(vec)
+    };
+    Ok(string)
+}
+
+/// Serialize the given data structure as a pretty-printed String of JSON without the enum variant tag.
+///
+/// This function is useful when serializing enum variants without their tag wrapper.
+/// Instead of serializing as `{"VariantName": {...}}`, it serializes just the content `{...}`.
+///
+/// # Example
+///
+/// ```
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     let event = Event::Updated { id: 42, name: "example".to_string() };
+///
+///     let json = serde_json::to_string_pretty_untagged(&event).unwrap();
+///
+///     // Output (pretty-printed):
+///     // {
+///     //   "id": 42,
+///     //   "name": "example"
+///     // }
+///     // Instead of:
+///     // {
+///     //   "Updated": {
+///     //     "id": 42,
+///     //     "name": "example"
+///     //   }
+///     // }
+///     let expected = "{\n  \"id\": 42,\n  \"name\": \"example\"\n}";
+///     assert_eq!(json, expected);
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Serialization can fail if `T`'s implementation of `Serialize` decides to
+/// fail, or if `T` contains a map with non-string keys.
+#[inline]
+pub fn to_string_pretty_untagged<T>(value: &T) -> Result<String>
+where
+    T: ?Sized + Serialize,
+{
+    let vec = tri!(to_vec_pretty_untagged(value));
     let string = unsafe {
         // We do not emit invalid UTF-8.
         String::from_utf8_unchecked(vec)

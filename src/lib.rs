@@ -391,17 +391,17 @@ pub mod __private {
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[doc(inline)]
-pub use crate::de::from_reader;
+pub use crate::de::{from_reader, from_reader_tagged};
 #[doc(inline)]
-pub use crate::de::{from_slice, from_str, Deserializer, StreamDeserializer};
+pub use crate::de::{from_slice, from_slice_tagged, from_str, from_str_tagged, Deserializer, StreamDeserializer};
 #[doc(inline)]
 pub use crate::error::{Error, Result};
 #[doc(inline)]
-pub use crate::ser::{to_string, to_string_pretty, to_vec, to_vec_pretty};
+pub use crate::ser::{to_string, to_string_pretty, to_string_pretty_untagged, to_string_untagged, to_vec, to_vec_pretty, to_vec_pretty_untagged, to_vec_untagged};
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[doc(inline)]
-pub use crate::ser::{to_writer, to_writer_pretty, Serializer};
+pub use crate::ser::{to_writer, to_writer_pretty, to_writer_pretty_untagged, to_writer_untagged, Serializer};
 #[doc(inline)]
 pub use crate::value::{from_value, to_value, Map, Number, Value};
 

@@ -27,6 +27,7 @@ use serde::de::{self, IgnoredAny, IntoDeserializer};
 use serde::ser::{self, SerializeMap, SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use serde_bytes::{ByteBuf, Bytes};
+use serde_json::de::StrRead;
 #[cfg(feature = "raw_value")]
 use serde_json::value::RawValue;
 use serde_json::{
@@ -2558,4 +2559,36 @@ fn test_control_character_search() {
         "\"\t\n\r\"",
         "control character (\\u0000-\\u001F) found while parsing a string at line 1 column 2",
     )]);
+}
+
+#[test]
+fn test_tagged_map_key() {
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
+    enum Event {
+        Foo { a: String, b: u32 },
+        Bar { a: String, b: u32 },
+    }
+
+    let event = Event::Bar {
+        a: "hi".to_string(),
+        b: 3,
+    };
+
+    let mut vec = Vec::with_capacity(128);
+    let mut ser = serde_json::ser::Serializer::new(&mut vec);
+    ser.skip_tag();
+    event.serialize(&mut ser).unwrap();
+    let json_str = unsafe {
+        // We do not emit invalid UTF-8.
+        String::from_utf8_unchecked(vec)
+    };
+    assert_eq!(json_str, r#"{"a":"hi","b":3}"#);
+
+    println!("{}", &json_str);
+    let de_event = Event::deserialize(&mut serde_json::de::Deserializer::new_with_tag(
+        StrRead::new(&json_str),
+        "Bar".to_string(),
+    ))
+    .unwrap();
+    assert_eq!(event, de_event);
 }

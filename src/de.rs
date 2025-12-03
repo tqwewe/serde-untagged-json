@@ -32,6 +32,7 @@ pub struct Deserializer<R> {
     read: R,
     scratch: Vec<u8>,
     remaining_depth: u8,
+    tag: Option<String>,
     #[cfg(feature = "float_roundtrip")]
     single_precision: bool,
     #[cfg(feature = "unbounded_depth")]
@@ -61,6 +62,59 @@ where
             read,
             scratch: Vec::new(),
             remaining_depth: 128,
+            tag: None,
+            #[cfg(feature = "float_roundtrip")]
+            single_precision: false,
+            #[cfg(feature = "unbounded_depth")]
+            disable_recursion_limit: false,
+        }
+    }
+
+    /// Create a JSON deserializer from one of the possible serde_json input
+    /// sources with a specified enum variant tag.
+    ///
+    /// This constructor is useful when deserializing untagged enum variants.
+    /// The `tag` parameter specifies the enum variant name to use during deserialization,
+    /// allowing you to deserialize JSON that doesn't include the variant tag.
+    ///
+    /// When reading from a source against which short reads are not efficient, such
+    /// as a [`File`], you will want to apply your own buffering because serde_json
+    /// will not buffer the input. See [`std::io::BufReader`].
+    ///
+    /// Typically it is more convenient to use one of these methods instead:
+    ///
+    ///   - [`from_str_tagged`]
+    ///   - [`from_slice_tagged`]
+    ///   - [`from_reader_tagged`]
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use serde::Deserialize;
+    /// use serde_json::de::{Deserializer, StrRead};
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// enum Event {
+    ///     Created { id: u64 },
+    ///     Updated { id: u64 },
+    /// }
+    ///
+    /// let json = r#"{"id": 42}"#;
+    /// let mut deserializer = Deserializer::new_with_tag(
+    ///     StrRead::new(json),
+    ///     "Created".to_string()
+    /// );
+    /// let event = Event::deserialize(&mut deserializer).unwrap();
+    /// assert_eq!(event, Event::Created { id: 42 });
+    /// ```
+    ///
+    /// [`File`]: std::fs::File
+    pub fn new_with_tag(read: R, tag: String) -> Self {
+        Deserializer {
+            read,
+            scratch: Vec::new(),
+            remaining_depth: 128,
+            tag: Some(tag),
             #[cfg(feature = "float_roundtrip")]
             single_precision: false,
             #[cfg(feature = "unbounded_depth")]
@@ -1875,6 +1929,10 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
+        if self.tag.is_some() {
+            return visitor.visit_enum(VariantAccess::new(self));
+        }
+
         match tri!(self.parse_whitespace()) {
             Some(b'{') => {
                 check_recursion! {
@@ -1902,6 +1960,9 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
+        if let Some(tag) = self.tag.take() {
+            return visitor.visit_string(tag);
+        }
         self.deserialize_str(visitor)
     }
 
@@ -2050,8 +2111,11 @@ impl<'de, 'a, R: Read<'de> + 'a> de::EnumAccess<'de> for VariantAccess<'a, R> {
     where
         V: de::DeserializeSeed<'de>,
     {
+        let skip_colon = self.de.tag.is_some();
         let val = tri!(seed.deserialize(&mut *self.de));
-        tri!(self.de.parse_object_colon());
+        if !skip_colon {
+            tri!(self.de.parse_object_colon());
+        }
         Ok((val, self))
     }
 }
@@ -2505,6 +2569,19 @@ where
     Ok(value)
 }
 
+fn from_trait_tagged<'de, R, T>(read: R, tag: String) -> Result<T>
+where
+    R: Read<'de>,
+    T: de::Deserialize<'de>,
+{
+    let mut de = Deserializer::new_with_tag(read, tag);
+    let value = tri!(de::Deserialize::deserialize(&mut de));
+
+    // Make sure the whole stream has been consumed.
+    tri!(de.end());
+    Ok(value)
+}
+
 /// Deserialize an instance of type `T` from an I/O stream of JSON.
 ///
 /// The content of the I/O stream is deserialized directly from the stream
@@ -2699,4 +2776,157 @@ where
     T: de::Deserialize<'a>,
 {
     from_trait(read::StrRead::new(s))
+}
+
+/// Deserialize an instance of type `T` from an I/O stream of JSON with a specified enum variant tag.
+///
+/// This function is useful when deserializing untagged enum variants. The `tag` parameter
+/// specifies the enum variant name to use during deserialization.
+///
+/// The content of the I/O stream is deserialized directly from the stream
+/// without being buffered in memory by serde_json.
+///
+/// When reading from a source against which short reads are not efficient, such
+/// as a [`File`], you will want to apply your own buffering because serde_json
+/// will not buffer the input. See [`std::io::BufReader`].
+///
+/// It is expected that the input stream ends after the deserialized object.
+/// If the stream does not end, such as in the case of a persistent socket connection,
+/// this function will not return. It is possible instead to deserialize from a prefix of an input
+/// stream without looking for EOF by managing your own [`Deserializer`].
+///
+/// Note that counter to intuition, this function is usually slower than
+/// reading a file completely into memory and then applying [`from_str_tagged`]
+/// or [`from_slice_tagged`] on it. See [issue #160].
+///
+/// [`File`]: std::fs::File
+/// [issue #160]: https://github.com/serde-rs/json/issues/160
+///
+/// # Example
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // JSON without the enum variant tag
+///     let json = br#"{"id": 42, "name": "example"}"#;
+///     let reader = std::io::BufReader::new(&json[..]);
+///
+///     // Deserialize with explicit variant tag
+///     let event: Event = serde_json::from_reader_tagged(reader, "Created".to_string())?;
+///
+///     assert_eq!(event, Event::Created { id: 42, name: "example".to_string() });
+///     Ok(())
+/// }
+/// ```
+///
+/// # Errors
+///
+/// This conversion can fail if the structure of the input does not match the
+/// structure expected by `T`, for example if `T` is a struct type but the input
+/// contains something other than a JSON map. It can also fail if the structure
+/// is correct but `T`'s implementation of `Deserialize` decides that something
+/// is wrong with the data, for example required struct fields are missing from
+/// the JSON map or some number is too big to fit in the expected primitive
+/// type.
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub fn from_reader_tagged<R, T>(rdr: R, tag: String) -> Result<T>
+where
+    R: crate::io::Read,
+    T: de::DeserializeOwned,
+{
+    from_trait_tagged(read::IoRead::new(rdr), tag)
+}
+
+/// Deserialize an instance of type `T` from bytes of JSON text with a specified enum variant tag.
+///
+/// This function is useful when deserializing untagged enum variants. The `tag` parameter
+/// specifies the enum variant name to use during deserialization.
+///
+/// # Example
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     // JSON without the enum variant tag
+///     let json = br#"{"id": 42, "name": "example"}"#;
+///
+///     // Deserialize with explicit variant tag
+///     let event: Event = serde_json::from_slice_tagged(json, "Updated".to_string()).unwrap();
+///
+///     assert_eq!(event, Event::Updated { id: 42, name: "example".to_string() });
+/// }
+/// ```
+///
+/// # Errors
+///
+/// This conversion can fail if the structure of the input does not match the
+/// structure expected by `T`, for example if `T` is a struct type but the input
+/// contains something other than a JSON map. It can also fail if the structure
+/// is correct but `T`'s implementation of `Deserialize` decides that something
+/// is wrong with the data, for example required struct fields are missing from
+/// the JSON map or some number is too big to fit in the expected primitive
+/// type.
+pub fn from_slice_tagged<'a, T>(v: &'a [u8], tag: String) -> Result<T>
+where
+    T: de::Deserialize<'a>,
+{
+    from_trait_tagged(read::SliceRead::new(v), tag)
+}
+
+/// Deserialize an instance of type `T` from a string of JSON text with a specified enum variant tag.
+///
+/// This function is useful when deserializing untagged enum variants. The `tag` parameter
+/// specifies the enum variant name to use during deserialization.
+///
+/// # Example
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// enum Event {
+///     Created { id: u64, name: String },
+///     Updated { id: u64, name: String },
+/// }
+///
+/// fn main() {
+///     // JSON without the enum variant tag
+///     let json = r#"{"id": 42, "name": "example"}"#;
+///
+///     // Deserialize with explicit variant tag
+///     let event: Event = serde_json::from_str_tagged(json, "Created".to_string()).unwrap();
+///
+///     assert_eq!(event, Event::Created { id: 42, name: "example".to_string() });
+/// }
+/// ```
+///
+/// # Errors
+///
+/// This conversion can fail if the structure of the input does not match the
+/// structure expected by `T`, for example if `T` is a struct type but the input
+/// contains something other than a JSON map. It can also fail if the structure
+/// is correct but `T`'s implementation of `Deserialize` decides that something
+/// is wrong with the data, for example required struct fields are missing from
+/// the JSON map or some number is too big to fit in the expected primitive
+/// type.
+pub fn from_str_tagged<'a, T>(s: &'a str, tag: String) -> Result<T>
+where
+    T: de::Deserialize<'a>,
+{
+    from_trait_tagged(read::StrRead::new(s), tag)
 }
