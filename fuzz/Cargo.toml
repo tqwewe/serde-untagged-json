@@ -1,5 +1,5 @@
 [package]
-name = "serde_json-fuzz"
+name = "serde_json_untagged-fuzz"
 version = "0.0.0"
 authors = ["David Tolnay <dtolnay@gmail.com>"]
 edition = "2021"
@@ -10,7 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-serde_json = { path = ".." }
+serde_json_untagged = { path = ".." }
 
 [[bin]]
 name = "from_slice"

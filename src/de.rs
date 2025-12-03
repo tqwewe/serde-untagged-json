@@ -43,11 +43,11 @@ impl<'de, R> Deserializer<R>
 where
     R: read::Read<'de>,
 {
-    /// Create a JSON deserializer from one of the possible serde_json input
+    /// Create a JSON deserializer from one of the possible serde_json_untagged input
     /// sources.
     ///
     /// When reading from a source against which short reads are not efficient, such
-    /// as a [`File`], you will want to apply your own buffering because serde_json
+    /// as a [`File`], you will want to apply your own buffering because serde_json_untagged
     /// will not buffer the input. See [`std::io::BufReader`].
     ///
     /// Typically it is more convenient to use one of these methods instead:
@@ -70,7 +70,7 @@ where
         }
     }
 
-    /// Create a JSON deserializer from one of the possible serde_json input
+    /// Create a JSON deserializer from one of the possible serde_json_untagged input
     /// sources with a specified enum variant tag.
     ///
     /// This constructor is useful when deserializing untagged enum variants.
@@ -78,7 +78,7 @@ where
     /// allowing you to deserialize JSON that doesn't include the variant tag.
     ///
     /// When reading from a source against which short reads are not efficient, such
-    /// as a [`File`], you will want to apply your own buffering because serde_json
+    /// as a [`File`], you will want to apply your own buffering because serde_json_untagged
     /// will not buffer the input. See [`std::io::BufReader`].
     ///
     /// Typically it is more convenient to use one of these methods instead:
@@ -91,7 +91,7 @@ where
     ///
     /// ```
     /// use serde::Deserialize;
-    /// use serde_json::de::{Deserializer, StrRead};
+    /// use serde_json_untagged::de::{Deserializer, StrRead};
     ///
     /// #[derive(Deserialize, Debug, PartialEq)]
     /// enum Event {
@@ -232,14 +232,14 @@ impl<'de, R: Read<'de>> Deserializer<R> {
     /// completed, including, but not limited to, Display and Debug and Drop
     /// impls.
     ///
-    /// *This method is only available if serde_json is built with the
+    /// *This method is only available if serde_json_untagged is built with the
     /// `"unbounded_depth"` feature.*
     ///
     /// # Examples
     ///
     /// ```
     /// use serde::Deserialize;
-    /// use serde_json::Value;
+    /// use serde_json_untagged::Value;
     ///
     /// fn main() {
     ///     let mut json = String::new();
@@ -247,7 +247,7 @@ impl<'de, R: Read<'de>> Deserializer<R> {
     ///         json = format!("[{}]", json);
     ///     }
     ///
-    ///     let mut deserializer = serde_json::Deserializer::from_str(&json);
+    ///     let mut deserializer = serde_json_untagged::Deserializer::from_str(&json);
     ///     deserializer.disable_recursion_limit();
     ///     let deserializer = serde_stacker::Deserializer::new(&mut deserializer);
     ///     let value = Value::deserialize(deserializer).unwrap();
@@ -1633,7 +1633,7 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     ///
     /// [RFC 7159]: https://tools.ietf.org/html/rfc7159
     ///
-    /// The behavior of serde_json is specified to fail on non-UTF-8 strings
+    /// The behavior of serde_json_untagged is specified to fail on non-UTF-8 strings
     /// when deserializing into Rust UTF-8 string types such as String, and
     /// succeed with the bytes representing the [WTF-8] encoding of code points
     /// when deserializing using this method.
@@ -1651,9 +1651,9 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     /// ```
     /// use serde_bytes::ByteBuf;
     ///
-    /// fn look_at_bytes() -> Result<(), serde_json::Error> {
+    /// fn look_at_bytes() -> Result<(), serde_json_untagged::Error> {
     ///     let json_data = b"\"some bytes: \xe5\x00\xe5\"";
-    ///     let bytes: ByteBuf = serde_json::from_slice(json_data)?;
+    ///     let bytes: ByteBuf = serde_json_untagged::from_slice(json_data)?;
     ///
     ///     assert_eq!(b'\xe5', bytes[12]);
     ///     assert_eq!(b'\0', bytes[13]);
@@ -1672,9 +1672,9 @@ impl<'de, R: Read<'de>> de::Deserializer<'de> for &mut Deserializer<R> {
     /// ```
     /// use serde_bytes::ByteBuf;
     ///
-    /// fn look_at_bytes() -> Result<(), serde_json::Error> {
+    /// fn look_at_bytes() -> Result<(), serde_json_untagged::Error> {
     ///     let json_data = b"\"lone surrogate: \\uD801\"";
-    ///     let bytes: ByteBuf = serde_json::from_slice(json_data)?;
+    ///     let bytes: ByteBuf = serde_json_untagged::from_slice(json_data)?;
     ///     let expected = b"lone surrogate: \xED\xA0\x81";
     ///     assert_eq!(expected, bytes.as_slice());
     ///     Ok(())
@@ -2398,7 +2398,7 @@ where
 /// arrays, objects, or strings, or be followed by whitespace or a self-delineating value.
 ///
 /// ```
-/// use serde_json::{Deserializer, Value};
+/// use serde_json_untagged::{Deserializer, Value};
 ///
 /// fn main() {
 ///     let data = "{\"k\": 3}1\"cool\"\"stuff\" 3{}  [0, 1, 2]";
@@ -2423,7 +2423,7 @@ where
     R: read::Read<'de>,
     T: de::Deserialize<'de>,
 {
-    /// Create a JSON stream deserializer from one of the possible serde_json
+    /// Create a JSON stream deserializer from one of the possible serde_json_untagged
     /// input sources.
     ///
     /// Typically it is more convenient to use one of these methods instead:
@@ -2450,7 +2450,7 @@ where
     /// ```
     /// let data = b"[0] [1] [";
     ///
-    /// let de = serde_json::Deserializer::from_slice(data);
+    /// let de = serde_json_untagged::Deserializer::from_slice(data);
     /// let mut stream = de.into_iter::<Vec<i32>>();
     /// assert_eq!(0, stream.byte_offset());
     ///
@@ -2585,10 +2585,10 @@ where
 /// Deserialize an instance of type `T` from an I/O stream of JSON.
 ///
 /// The content of the I/O stream is deserialized directly from the stream
-/// without being buffered in memory by serde_json.
+/// without being buffered in memory by serde_json_untagged.
 ///
 /// When reading from a source against which short reads are not efficient, such
-/// as a [`File`], you will want to apply your own buffering because serde_json
+/// as a [`File`], you will want to apply your own buffering because serde_json_untagged
 /// will not buffer the input. See [`std::io::BufReader`].
 ///
 /// It is expected that the input stream ends after the deserialized object.
@@ -2627,7 +2627,7 @@ where
 ///     let reader = BufReader::new(file);
 ///
 ///     // Read the JSON contents of the file as an instance of `User`.
-///     let u = serde_json::from_reader(reader)?;
+///     let u = serde_json_untagged::from_reader(reader)?;
 ///
 ///     // Return the `User`.
 ///     Ok(u)
@@ -2657,7 +2657,7 @@ where
 /// }
 ///
 /// fn read_user_from_stream(stream: &mut BufReader<TcpStream>) -> Result<User, Box<dyn Error>> {
-///     let mut de = serde_json::Deserializer::from_reader(stream);
+///     let mut de = serde_json_untagged::Deserializer::from_reader(stream);
 ///     let u = User::deserialize(&mut de)?;
 ///
 ///     Ok(u)
@@ -2715,7 +2715,7 @@ where
 ///             \"location\": \"Menlo Park, CA\"
 ///         }";
 ///
-///     let u: User = serde_json::from_slice(j).unwrap();
+///     let u: User = serde_json_untagged::from_slice(j).unwrap();
 ///     println!("{:#?}", u);
 /// }
 /// ```
@@ -2757,7 +2757,7 @@ where
 ///             \"location\": \"Menlo Park, CA\"
 ///         }";
 ///
-///     let u: User = serde_json::from_str(j).unwrap();
+///     let u: User = serde_json_untagged::from_str(j).unwrap();
 ///     println!("{:#?}", u);
 /// }
 /// ```
@@ -2784,10 +2784,10 @@ where
 /// specifies the enum variant name to use during deserialization.
 ///
 /// The content of the I/O stream is deserialized directly from the stream
-/// without being buffered in memory by serde_json.
+/// without being buffered in memory by serde_json_untagged.
 ///
 /// When reading from a source against which short reads are not efficient, such
-/// as a [`File`], you will want to apply your own buffering because serde_json
+/// as a [`File`], you will want to apply your own buffering because serde_json_untagged
 /// will not buffer the input. See [`std::io::BufReader`].
 ///
 /// It is expected that the input stream ends after the deserialized object.
@@ -2819,7 +2819,7 @@ where
 ///     let reader = std::io::BufReader::new(&json[..]);
 ///
 ///     // Deserialize with explicit variant tag
-///     let event: Event = serde_json::from_reader_tagged(reader, "Created".to_string())?;
+///     let event: Event = serde_json_untagged::from_reader_tagged(reader, "Created".to_string())?;
 ///
 ///     assert_eq!(event, Event::Created { id: 42, name: "example".to_string() });
 ///     Ok(())
@@ -2866,7 +2866,7 @@ where
 ///     let json = br#"{"id": 42, "name": "example"}"#;
 ///
 ///     // Deserialize with explicit variant tag
-///     let event: Event = serde_json::from_slice_tagged(json, "Updated".to_string()).unwrap();
+///     let event: Event = serde_json_untagged::from_slice_tagged(json, "Updated".to_string()).unwrap();
 ///
 ///     assert_eq!(event, Event::Updated { id: 42, name: "example".to_string() });
 /// }
@@ -2909,7 +2909,7 @@ where
 ///     let json = r#"{"id": 42, "name": "example"}"#;
 ///
 ///     // Deserialize with explicit variant tag
-///     let event: Event = serde_json::from_str_tagged(json, "Created".to_string()).unwrap();
+///     let event: Event = serde_json_untagged::from_str_tagged(json, "Created".to_string()).unwrap();
 ///
 ///     assert_eq!(event, Event::Created { id: 42, name: "example".to_string() });
 /// }

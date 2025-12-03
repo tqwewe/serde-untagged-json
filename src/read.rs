@@ -24,7 +24,7 @@ use serde::de::Visitor;
 /// stable we can use actual specialization.
 ///
 /// This trait is sealed and cannot be implemented for types outside of
-/// `serde_json`.
+/// `serde_json_untagged`.
 pub trait Read<'de>: private::Sealed {
     #[doc(hidden)]
     fn next(&mut self) -> Result<Option<u8>>;
@@ -193,7 +193,7 @@ where
     /// Create a JSON input source to read from a std::io input stream.
     ///
     /// When reading from a source against which short reads are not efficient, such
-    /// as a [`File`], you will want to apply your own buffering because serde_json
+    /// as a [`File`], you will want to apply your own buffering because serde_json_untagged
     /// will not buffer the input. See [`std::io::BufReader`].
     ///
     /// [`File`]: std::fs::File

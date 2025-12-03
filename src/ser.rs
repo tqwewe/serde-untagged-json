@@ -2254,7 +2254,7 @@ where
 ///     let event = Event::Created { id: 42, name: "example".to_string() };
 ///
 ///     let mut buf = Vec::new();
-///     serde_json::to_writer_untagged(&mut buf, &event)?;
+///     serde_json_untagged::to_writer_untagged(&mut buf, &event)?;
 ///
 ///     // Output: {"id":42,"name":"example"}
 ///     // Instead of: {"Created":{"id":42,"name":"example"}}
@@ -2302,7 +2302,7 @@ where
 ///     let event = Event::Updated { id: 42, name: "example".to_string() };
 ///
 ///     let mut buf = Vec::new();
-///     serde_json::to_writer_pretty_untagged(&mut buf, &event)?;
+///     serde_json_untagged::to_writer_pretty_untagged(&mut buf, &event)?;
 ///
 ///     // Output (pretty-printed):
 ///     // {
@@ -2387,7 +2387,7 @@ where
 /// fn main() {
 ///     let event = Event::Created { id: 42, name: "example".to_string() };
 ///
-///     let json = serde_json::to_vec_untagged(&event).unwrap();
+///     let json = serde_json_untagged::to_vec_untagged(&event).unwrap();
 ///
 ///     // Output: {"id":42,"name":"example"}
 ///     // Instead of: {"Created":{"id":42,"name":"example"}}
@@ -2428,7 +2428,7 @@ where
 /// fn main() {
 ///     let event = Event::Updated { id: 42, name: "example".to_string() };
 ///
-///     let json = serde_json::to_vec_pretty_untagged(&event).unwrap();
+///     let json = serde_json_untagged::to_vec_pretty_untagged(&event).unwrap();
 ///
 ///     // Output (pretty-printed):
 ///     // {
@@ -2518,7 +2518,7 @@ where
 /// fn main() {
 ///     let event = Event::Created { id: 42, name: "example".to_string() };
 ///
-///     let json = serde_json::to_string_untagged(&event).unwrap();
+///     let json = serde_json_untagged::to_string_untagged(&event).unwrap();
 ///
 ///     // Output: {"id":42,"name":"example"}
 ///     // Instead of: {"Created":{"id":42,"name":"example"}}
@@ -2562,7 +2562,7 @@ where
 /// fn main() {
 ///     let event = Event::Updated { id: 42, name: "example".to_string() };
 ///
-///     let json = serde_json::to_string_pretty_untagged(&event).unwrap();
+///     let json = serde_json_untagged::to_string_pretty_untagged(&event).unwrap();
 ///
 ///     // Output (pretty-printed):
 ///     // {
